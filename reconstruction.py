@@ -6,6 +6,7 @@ import MRzeroCore as mr0
 import pulseqzero
 
 def reconstruct_signal(Nread,Nphase,signal,encoding,obj_p):
+
     # reshape to k-space
     kspace = torch.reshape(signal, (Nread, Nphase)).clone().t()
     encoding = np.stack(encoding)
@@ -50,3 +51,17 @@ def reconstruct_signal(Nread,Nphase,signal,encoding,obj_p):
     # now actually show everything
     plt.tight_layout()
     plt.show()
+
+def reconstruction_for_optimazation(signal, encoding, Nread, Nphase):
+  # reconstruct image
+  kspace = torch.reshape((signal), (Nread, Nphase)).clone().t()
+  encoding = np.stack(encoding)
+  ipermvec = np.argsort(encoding)
+  kspace=kspace[:,ipermvec]
+
+  # fftshift FFT fftshift
+  spectrum = torch.fft.fftshift(kspace)
+  space = torch.fft.fft2(spectrum)
+  space = torch.fft.ifftshift(space)
+
+  return space

@@ -1,3 +1,5 @@
+ # %%  IMPORTS
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,9 +8,10 @@ import MRzeroCore as mr0
 import pulseqzero
 import sequence_script as seqs
 import reconstruction 
+import optimization as opt
 pp = pulseqzero.pp_impl
 
-def make_obj_simulation(sz,fov,slice_thickness):
+def make_obj_simulation(sz,fov,slice_thickness,build=True,inhomogeneity=False):
     if 1:
         # (i) load a phantom object from file
         # obj_p = mr0.VoxelGridPhantom.load_mat('../data/phantom2D.mat')
@@ -18,10 +21,10 @@ def make_obj_simulation(sz,fov,slice_thickness):
     # Manipulate loaded data
         obj_p.T2dash[:] = 30e-3
         obj_p.D *= 0 
-        if 1:
-            obj_p.B0 *= 2    # alter the B0 inhomogeneity
+        if inhomogeneity:
+            obj_p.B0 *= 1    # alter the B0 inhomogeneity
             #obj_p.B1[:] = 1
-            obj_p.B1 *= 3  # alter the B1 inhomogeneity
+            obj_p.B1 *= 1  # alter the B1 inhomogeneity
         else:#no inhomogeneity
             obj_p.B0 *= 0   
             obj_p.B1[:] = 1  
@@ -30,11 +33,12 @@ def make_obj_simulation(sz,fov,slice_thickness):
         B0 = obj_p.B0.squeeze()
     #obj_p.plot()
     obj_p.size=torch.tensor([fov, fov, slice_thickness]) 
-    # Convert Phantom into simulation data
-    obj_p = obj_p.build()
+    if build:
+        # Convert Phantom into simulation data
+        obj_p = obj_p.build()
     return obj_p
-# %% S2. CHECK, PLOT 
-# Simulate the sequence
+
+# %%  SIMULATE  the external.seq file and add acquired signal to ADC plot + Recon
 if __name__=="__main__":
     base_resolution=42
     Ex_FA=90    # excitation flip angle
@@ -56,7 +60,7 @@ if __name__=="__main__":
     seq.write('external.seq')
     sz = [64, 64]  # image size
     obj_p = make_obj_simulation(sz=sz,fov=fov,slice_thickness=slice_thickness)
-    # %% S5:. SIMULATE  the external.seq file and add acquired signal to ADC plot
+    
     # Read in the sequence 
     seq0 = mr0.Sequence.import_file("external.seq")
     
@@ -66,9 +70,18 @@ if __name__=="__main__":
     signal = mr0.execute_graph(graph, seq0, obj_p)
 
     # PLOT sequence with signal in the ADC subplot
-    #mr0.util.pulseq_plot(seq, signal=signal.numpy())
+    mr0.util.pulseq_plot(seq, signal=signal.numpy())
 
-    # %% S6: RECONSTRUCT the simulated data
+    #  RECONSTRUCT the simulated data
     # additional noise as simulation is perfect
     #signal += 1e-4 * np.random.randn(signal.shape[0], 2).view(np.complex128)
     reconstruction.reconstruct_signal(Nread=base_resolution,Nphase=base_resolution,signal=signal,encoding=encoding,obj_p=obj_p)
+
+    # %% OPTIMIZE the refocusing flip angles
+    obj_p = make_obj_simulation(sz=sz,fov=fov,slice_thickness=slice_thickness,build=False,inhomogeneity=True)
+    #target is done without any inhomogeneity
+    target,Ref_FA_target = opt.generate_target_space(pp,sz)
+    iterations= 100
+    opt.perform_optimazation(obj_p, target, pp, Ref_FA_target,iterations,base_resolution,Ex_FA)
+
+# %%
